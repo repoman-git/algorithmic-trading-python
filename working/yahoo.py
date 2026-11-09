@@ -123,13 +123,13 @@ def _one_fundamental(symbol: str) -> dict | None:
         except Exception as error:
             print(f"fundamentals {symbol} failed ({attempt + 1}): {error}", flush=True)
             info = {}
-        if info.get("marketCap") or info.get("trailingPE"):
+        if info.get("marketCap") or info.get("trailingPE") or info.get("totalAssets"):
             break
     if not info:
         return None
     return {
         "yahoo": symbol,
-        "market_cap": info.get("marketCap"),
+        "market_cap": info.get("marketCap") or info.get("totalAssets"),
         "pe": info.get("trailingPE"),
         "pb": info.get("priceToBook"),
         "ps": info.get("priceToSalesTrailing12Months"),

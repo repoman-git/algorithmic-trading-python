@@ -79,25 +79,37 @@ def momentum(market: pd.DataFrame, portfolio_size: float, count: int = 50) -> pd
     return out[columns].reset_index(drop=True)
 
 
-def value(market: pd.DataFrame, portfolio_size: float, count: int = 50) -> pd.DataFrame:
+def value(
+    market: pd.DataFrame,
+    portfolio_size: float,
+    count: int = 50,
+    include: tuple[str, ...] = VALUE_FIELDS,
+    require_positive: tuple[str, ...] = (),
+) -> pd.DataFrame:
     frame = market.dropna(subset=["price"]).copy()
     frame = frame[frame["price"] > 0]
-    built = pd.DataFrame(
-        {
-            "Ticker": frame["ticker"].to_numpy(),
-            "Price": frame["price"].to_numpy(),
-            "Price-to-Earnings Ratio": frame["pe"].to_numpy(),
-            "Price-to-Book Ratio": frame["pb"].to_numpy(),
-            "Price-to-Sales Ratio": frame["ps"].to_numpy(),
-            "EV/EBITDA": _ratio(frame["enterprise_value"], frame["ebitda"]),
-            "EV/GP": _ratio(frame["enterprise_value"], frame["gross_profit"]),
-        }
-    )
-    for column in VALUE_FIELDS:
+    ratios = {
+        "Price-to-Earnings Ratio": pd.to_numeric(frame["pe"], errors="coerce"),
+        "Price-to-Book Ratio": pd.to_numeric(frame["pb"], errors="coerce"),
+        "Price-to-Sales Ratio": pd.to_numeric(frame["ps"], errors="coerce"),
+        "EV/EBITDA": _ratio(frame["enterprise_value"], frame["ebitda"]),
+        "EV/GP": _ratio(frame["enterprise_value"], frame["gross_profit"]),
+    }
+    keep = pd.Series(True, index=frame.index)
+    for column in require_positive:
+        values = ratios[column]
+        keep &= values.notna() & (values > 0)
+    frame = frame.loc[keep]
+    built = pd.DataFrame({"Ticker": frame["ticker"].to_numpy(), "Price": frame["price"].to_numpy()})
+    for column in include:
+        built[column] = ratios[column].loc[keep].to_numpy()
+    if built.empty:
+        return built
+    for column in include:
         built[column] = built[column].fillna(built[column].mean())
-    for column in VALUE_FIELDS:
+    for column in include:
         built[f"{column} Percentile"] = _percentile(built[column])
-    percentile_columns = [f"{column} Percentile" for column in VALUE_FIELDS]
+    percentile_columns = [f"{column} Percentile" for column in include]
     built["RV Score"] = built[percentile_columns].mean(axis=1)
     built = built.sort_values("RV Score", ascending=True).head(count)
     position = portfolio_size / len(built)
@@ -106,25 +118,15 @@ def value(market: pd.DataFrame, portfolio_size: float, count: int = 50) -> pd.Da
         "Price-to-Earnings Ratio Percentile": "PE Percentile",
         "Price-to-Book Ratio Percentile": "PB Percentile",
         "Price-to-Sales Ratio Percentile": "PS Percentile",
+        "EV/EBITDA Percentile": "EV/EBITDA Percentile",
+        "EV/GP Percentile": "EV/GP Percentile",
     }
-    return built.rename(columns=rename)[
-        [
-            "Ticker",
-            "Price",
-            "Number of Shares to Buy",
-            "Price-to-Earnings Ratio",
-            "PE Percentile",
-            "Price-to-Book Ratio",
-            "PB Percentile",
-            "Price-to-Sales Ratio",
-            "PS Percentile",
-            "EV/EBITDA",
-            "EV/EBITDA Percentile",
-            "EV/GP",
-            "EV/GP Percentile",
-            "RV Score",
-        ]
-    ].reset_index(drop=True)
+    order = ["Ticker", "Price", "Number of Shares to Buy"]
+    for column in include:
+        order.append(column)
+        order.append(rename[f"{column} Percentile"])
+    order.append("RV Score")
+    return built.rename(columns=rename)[order].reset_index(drop=True)
 
 
 def _percentile(series: pd.Series) -> pd.Series:
