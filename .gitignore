@@ -7,3 +7,7 @@ __pycache__
 **/recommended_trades.xlsx
 **/momentum_strategy.xlsx
 venv/
+.venv/
+data/cache/
+output/
+
